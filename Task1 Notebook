@@ -1,0 +1,138 @@
+# Feature部分
+class Feature:
+    def __init__(self):
+        # 初始化Feature类，设置路径、年份和预测步骤
+        self.path = feature_path
+        self.years = years
+        self.fcst_steps = fcst_steps
+        self.features_paths_dict = self.get_features_paths()
+
+    def get_features_paths(self):
+        # 创建一个字典，将初始时间映射到对应的特征文件路径
+        init_time_path_dict = {}
+        for year in self.years:
+            init_time_dir_year = os.listdir(os.path.join(self.path, year))
+            for init_time in sorted(init_time_dir_year):
+                init_time_path_dict[pd.to_datetime(init_time)] = os.path.join(self.path, year, init_time)
+        return init_time_path_dict
+
+    def get_fts(self, init_time):
+        # 根据给定的初始时间获取特征数据
+        return xr.open_mfdataset(self.features_paths_dict.get(init_time) + '/*').sel(lead_time=self.fcst_steps).isel(
+            time=0)
+
+1. Feature类：
+   - 用于管理和获取特征数据
+   - 初始化时创建特征文件路径字典
+   - 提供方法来根据初始时间获取特征数据
+
+# GroundTruth部分
+class GT:
+    def __init__(self):
+        # 初始化GT类，设置路径、年份和预测步骤
+        self.path = gt_path
+        self.years = years
+        self.fcst_steps = fcst_steps
+        self.gt_paths = [os.path.join(self.path, f'{year}.nc') for year in self.years]
+        self.gts = xr.open_mfdataset(self.gt_paths)
+
+    def parser_gt_timestamps(self, init_time):
+        # 根据初始时间和预测步骤生成时间戳列表
+        return [init_time + pd.Timedelta(f'{fcst_step}h') for fcst_step in self.fcst_steps]
+
+    def get_gts(self, init_time):
+        # 根据给定的初始时间获取地面实况数据
+        return self.gts.sel(time=self.parser_gt_timestamps(init_time))
+
+
+2. GT（Ground Truth）类：
+   - 用于管理和获取地面实况数据
+   - 初始化时加载所有年份的地面实况数据
+   - 提供方法来根据初始时间获取对应的地面实况数据
+
+# 模型训练部分
+import numpy as np
+import torch
+
+# 设置训练参数
+num_epochs = 1
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+# 开始训练循环
+for epoch in range(num_epochs):
+    for index, (ft_item, gt_item) in enumerate(train_loader):
+        # 将数据移到GPU并转换为float类型
+        ft_item = ft_item.cuda().float()
+        gt_item = gt_item.cuda().float()
+        print(type(ft_item))
+        print(type(gt_item))
+        
+        # 前向传播
+        output_item = model(ft_item)
+        loss = loss_func(output_item, gt_item)
+        
+        # 反向传播和优化
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        # 每10步打印一次损失
+        if (index+1) % 10 == 0:
+            print(f"Epoch [{epoch+1}/{num_epochs}], Step [{index+1}/{len(train_loader)}], Loss: {loss.item():.4f}")
+
+# 保存模型权重
+torch.save(model.state_dict(), 'model_weights.pth')
+
+3. 模型训练部分：
+   - 设置训练参数，如epoch数和优化器
+   - 实现训练循环，包括数据加载、前向传播、损失计算、反向传播和优化
+   - 定期打印训练损失
+   - 训练结束后保存模型权重
+
+4.模型设计部分：
+
+1. 模型定义：
+
+```python
+class Model(nn.Module):
+    def __init__(self, num_in_ch, num_out_ch):
+        super(Model, self).__init__()
+        self.conv1 = nn.Conv2d(num_in_ch, num_out_ch, 3, 1, 1)
+```
+
+- 这里定义了一个名为 `Model` 的类，继承自 `nn.Module`。
+- 在初始化函数中，创建了一个2D卷积层 `conv1`。
+- 卷积层参数：输入通道 `num_in_ch`，输出通道 `num_out_ch`，卷积核大小为3，步长为1，padding为1。
+
+2. 前向传播函数：
+
+```python
+def forward(self, x):
+    B, S, C, W, H = tuple(x.shape)
+    x = x.reshape(B, -1, W, H)
+    out = self.conv1(x)
+    out = out.reshape(B, S, W, H)
+    return out
+```
+
+- 输入 `x` 的形状为 (B, S, C, W, H)，其中 B 可能是批次大小，S 可能是序列长度，C 是通道数，W 和 H 是宽度和高度。
+- 将输入重塑为 (B, S*C, W, H) 的形状，以便进行2D卷积。
+- 应用卷积操作。
+- 将输出重塑回原始的 (B, S, W, H) 形状。
+
+3. 模型实例化：
+
+```python
+in_varibales = 24
+in_times = len(fcst_steps)
+out_varibales = 1
+out_times = len(fcst_steps)
+input_size = in_times * in_varibales
+output_size = out_times * out_varibales
+model = Model(input_size, output_size).cuda()
+```
+
+- 定义了输入变量数 (`in_varibales`) 和输出变量数 (`out_varibales`)。
+- 计算总的输入尺寸和输出尺寸。
+- 创建模型实例，并将其移动到GPU上（通过 `.cuda()`）。
+
